@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:db="http://www.mulesoft.org/schema/mule/db"
+      xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+      xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+        http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+        http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+
+    <!-- Flow: Get Order -->
+    <flow name="get-order-flow">
+        <http:listener doc:name="Listener" config-ref="HTTP_Listener_config" path="/orders/{id}" allowedMethods="GET"/>
+
+        <ee:transform doc:name="Transform Message">
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+output application/java
+---
+{
+    id: attributes.uriParams.id
+}
+]]></ee:set-payload>
+            </ee:message>
+        </ee:transform>
+
+        <db:select doc:name="Select" config-ref="ordersdb">
+            <db:sql><![CDATA[SELECT * FROM orders WHERE id = :id]]></db:sql>
+        </db:select>
+
+        <choice doc:name="Choice">
+            <when expression="payload == null or payload.isEmpty()">
+                <set-payload value='#[{
+                    "error": "Order not found",
+                    "message": "The order with the specified ID does not exist."
+                }]' doc:name="Set Payload"/>
+                <set-variable variableName="httpStatus" value="404" doc:name="Set Variable"/>
+            </when>
+            <otherwise>
+                <set-payload value="#[%dw 2.0 output application/json --- payload]" doc:name="Set Payload"/>
+            </otherwise>
+        </choice>
+
+        <error-handler>
+            <on-error-propagate enableNotifications="true" logException="true" doc:name="On Error Propagate" type="HTTP:NOT_FOUND">
+                <set-payload value='#[{
+                    "error": "Order not found"
+                }]' doc:name="Set Payload"/>
+                <set-variable variableName="httpStatus" value="404" doc:name="Set Variable"/>
+            </on-error-propagate>
+        </error-handler>
+    </flow>
+
+</mule>

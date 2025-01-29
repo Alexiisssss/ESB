@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:db="http://www.mulesoft.org/schema/mule/db"
+      xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+        http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd">
+
+    <flow name="delete-order-flow" doc:id="3ef2a552-ca66-4521-ab18-712442849889">
+        <http:listener doc:name="Listener" doc:id="3c43c461-bf03-4b82-8963-9e4660dc4992"
+                       config-ref="HTTP_Listener_config" path="/orders/{id}" allowedMethods="DELETE"/>
+
+        <db:delete doc:name="Delete" doc:id="df89f92f-a8f7-4837-817d-2ef1f54da48a" config-ref="ordersdb">
+            <db:sql><![CDATA[DELETE FROM orders WHERE id = :id]]></db:sql>
+            <db:input-parameters><![CDATA[#[{id: attributes.uriParams.id}]]]></db:input-parameters>
+        </db:delete>
+
+        <choice doc:name="Choice" doc:id="b7f40490-2484-48d5-90ee-d4320affdcea">
+            <when expression="#[payload.affectedRows > 0]">
+                <set-payload value='#[{ "message": "Order deleted successfully" }]' doc:name="Set Payload"
+                             doc:id="f570cde6-d499-455a-8871-24ce8fc7f3c2" mimeType="application/json"/>
+                <set-variable value="200" doc:name="Set Variable" variableName="httpStatus"/>
+            </when>
+            <otherwise>
+                <set-payload value='#[{ "error": "Order not found" }]' doc:name="Set Payload"
+                             doc:id="2776a14c-a6cc-4ab7-81a3-de70806d48c4"/>
+                <set-variable value="404" doc:name="Set Variable" variableName="httpStatus"/>
+            </otherwise>
+        </choice>
+
+        <!-- Обработчик ошибок -->
+        <error-handler>
+            <on-error-propagate enableNotifications="true" logException="true" doc:name="On Error Propagate"
+                                doc:id="fa0d727a-2974-4440-a568-9c15a42c4fc6" type="DB:CONNECTIVITY">
+                <set-variable value="500" doc:name="Set Variable" variableName="httpStatus"/>
+                <set-payload value='#[{ "error": "Database connection error" }]' doc:name="Set Payload"/>
+            </on-error-propagate>
+        </error-handler>
+    </flow>
+</mule>

@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:jms="http://www.mulesoft.org/schema/mule/jms"
+      xmlns:db="http://www.mulesoft.org/schema/mule/db"
+      xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+      xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+        http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+        http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+        http://www.mulesoft.org/schema/mule/jms http://www.mulesoft.org/schema/mule/jms/current/mule-jms.xsd">
+
+    <flow name="update-order-status-flow">
+        <http:listener doc:name="Listener"
+                       config-ref="HTTP_Listener_config"
+                       path="/orders/{id}/status"
+                       allowedMethods="PUT"/>
+
+        <ee:transform doc:name="Transform Message">
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+output application/java
+---
+{
+    id: attributes.uriParams.id as Number,
+    status: payload.status
+}
+]]></ee:set-payload>
+            </ee:message>
+        </ee:transform>
+
+        <db:update doc:name="Update" config-ref="ordersdb">
+            <db:sql><![CDATA[
+                UPDATE orders SET status = :status WHERE id = :id
+            ]]></db:sql>
+            <db:input-parameters><![CDATA[
+                #[{
+                    id: payload.id,
+                    status: payload.status
+                }]
+            ]]></db:input-parameters>
+        </db:update>
+
+        <!-- Проверяем, обновилась ли хотя бы одна строка -->
+        <choice doc:name="Choice">
+            <when expression="#[payload.affectedRows > 0]">
+               <jms:publish doc:name="Publish"
+             config-ref="JMS_Config"
+             destination="order_status_updates"
+             sendCorrelationId="AUTO">
+    <jms:message>
+        <jms:body><![CDATA[%dw 2.0
+output application/json
+---
+{
+    orderId: payload.id,
+    newStatus: payload.status
+}
+]]></jms:body>
+    </jms:message>
+</jms:publish>
+
+
+                <set-payload value='#[{ "message": "Order status updated successfully" }]' doc:name="Set Payload"/>
+                <set-variable value="200" doc:name="Set Variable" variableName="httpStatus"/>
+            </when>
+            <otherwise>
+                <set-payload value='#[{ "error": "Order not found" }]' doc:name="Set Payload"/>
+                <set-variable value="404" doc:name="Set Variable" variableName="httpStatus"/>
+            </otherwise>
+        </choice>
+
+        <!-- Обработчик ошибок -->
+        <error-handler>
+            <on-error-propagate enableNotifications="true"
+                                logException="true"
+                                doc:name="On Error Propagate"
+                                type="DB:CONNECTIVITY">
+                <set-variable value="500" doc:name="Set Variable" variableName="httpStatus"/>
+                <set-payload value='#[{ "error": "Database connection error" }]' doc:name="Set Payload"/>
+            </on-error-propagate>
+        </error-handler>
+    </flow>
+</mule>
