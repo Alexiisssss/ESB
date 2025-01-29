@@ -103,3 +103,7 @@ http://localhost:8081
 }
 
 **DELETE /orders/1**
+
+
+
+![image](https://github.com/user-attachments/assets/31ba9880-f5ae-46c0-bc64-b00e34c4e79b)
